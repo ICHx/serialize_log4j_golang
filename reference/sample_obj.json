@@ -1,0 +1,35 @@
+{
+    "@": [
+        "AAAnEA==",
+        null
+    ],
+    "categoryName": "sender",
+    "class": {},
+    "extends": {
+        "org.apache.log4j.spi.LoggingEvent": {
+            "@": [
+                "AAAnEA==",
+                null
+            ],
+            "categoryName": "sender",
+            "locationInfo": null,
+            "mdcCopy": null,
+            "mdcCopyLookupRequired": false,
+            "ndc": null,
+            "ndcLookupRequired": false,
+            "renderedMessage": "Hello",
+            "threadName": "main",
+            "throwableInfo": null,
+            "timeStamp": 1678121083322
+        }
+    },
+    "locationInfo": null,
+    "mdcCopy": null,
+    "mdcCopyLookupRequired": false,
+    "ndc": null,
+    "ndcLookupRequired": false,
+    "renderedMessage": "Hello",
+    "threadName": "main",
+    "throwableInfo": null,
+    "timeStamp": 1678121083322
+}

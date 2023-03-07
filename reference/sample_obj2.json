@@ -1,0 +1,99 @@
+{
+    "@": [
+        "AABOIA==",
+        null
+    ],
+    "categoryName": "com.xxx.log.test.Tester",
+    "class": {},
+    "extends": {
+        "org.apache.log4j.spi.LoggingEvent": {
+            "@": [
+                "AABOIA==",
+                null
+            ],
+            "categoryName": "com.xxx.log.test.Tester",
+            "locationInfo": null,
+            "mdcCopy": {
+                "@": [
+                    "AAAABwAAAAI=",
+                    "host",
+                    "rdesk.local",
+                    "application",
+                    "Log4j-tester"
+                ],
+                "class": {},
+                "extends": {
+                    "java.util.Hashtable": {
+                        "@": [
+                            "AAAABwAAAAI=",
+                            "host",
+                            "rdesk.local",
+                            "application",
+                            "Log4j-tester"
+                        ],
+                        "loadFactor": 0.75,
+                        "threshold": 5,
+                        "value": {
+                            "application": "Log4j-tester",
+                            "host": "rdesk.local"
+                        }
+                    }
+                },
+                "loadFactor": 0.75,
+                "threshold": 5,
+                "value": {
+                    "application": "Log4j-tester",
+                    "host": "rdesk.local"
+                }
+            },
+            "mdcCopyLookupRequired": false,
+            "ndc": null,
+            "ndcLookupRequired": false,
+            "renderedMessage": "Log4j test message #0: This rules broke any doctor.",
+            "threadName": "Thread-0",
+            "throwableInfo": null,
+            "timeStamp": 1678122882545
+        }
+    },
+    "locationInfo": null,
+    "mdcCopy": {
+        "@": [
+            "AAAABwAAAAI=",
+            "host",
+            "rdesk.local",
+            "application",
+            "Log4j-tester"
+        ],
+        "class": {},
+        "extends": {
+            "java.util.Hashtable": {
+                "@": [
+                    "AAAABwAAAAI=",
+                    "host",
+                    "rdesk.local",
+                    "application",
+                    "Log4j-tester"
+                ],
+                "loadFactor": 0.75,
+                "threshold": 5,
+                "value": {
+                    "application": "Log4j-tester",
+                    "host": "rdesk.local"
+                }
+            }
+        },
+        "loadFactor": 0.75,
+        "threshold": 5,
+        "value": {
+            "application": "Log4j-tester",
+            "host": "rdesk.local"
+        }
+    },
+    "mdcCopyLookupRequired": false,
+    "ndc": null,
+    "ndcLookupRequired": false,
+    "renderedMessage": "Log4j test message #0: This rules broke any doctor.",
+    "threadName": "Thread-0",
+    "throwableInfo": null,
+    "timeStamp": 1678122882545
+}
