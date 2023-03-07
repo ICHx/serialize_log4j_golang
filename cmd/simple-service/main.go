@@ -56,6 +56,13 @@ func handleRequest(conn net.Conn) {
 	log.Println("Received unserialized content:\n", objs)
 }
 
+func Uint16(b []byte) uint16 {
+	// big endian
+	result:= uint16(b[1]) | uint16(b[0])<<8
+	log.Println("Uint16:", result)
+	return result
+}
+
 func reader_to_json(conn net.Conn) string {
 
 	var json_str_array []string
@@ -80,10 +87,15 @@ func reader_to_json(conn net.Conn) string {
 			if err == io.EOF && obj_arr == nil {
 				continue
 			}
-			if strings.Contains(err.Error(), "parsing Reset") && obj_arr == nil {
-				continue
+			if strings.Contains(err.Error(), "parsing Reset") {
+				if obj_arr == nil {
+					continue
+				} else {
+					// nothing
+				}
+			} else {
+				log.Println("Error parsing object:", obj_arr, err)
 			}
-			log.Println("Error parsing object:", obj_arr, err)
 
 		}
 
