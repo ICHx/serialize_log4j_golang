@@ -17,7 +17,7 @@ import (
 
 type config struct {
 	HOST string `env:"HOST_LOG4J_INPUT" envDefault:"localhost"`
-	PORT string `env:"PORT_LOG4J_INPUT" envDefault:"2518"`
+	PORT string `env:"PORT_LOG4J_INPUT" envDefault:"4560"`
 	// BUFFER int    `env:"BUFFER_LOG4J_INPUT" envDefault:"1024"`
 }
 
@@ -55,14 +55,7 @@ func handleRequest(conn net.Conn) {
 	// Make a reader to get incoming data.
 
 	objs := read_stream(conn)
-	log.Println("Received unserialized content:\n", objs)
-}
-
-func Uint16(b []byte) uint16 {
-	// big endian
-	result := uint16(b[1]) | uint16(b[0])<<8
-	log.Println("Uint16:", result)
-	return result
+	log.Println("Total Deserialized messages:\n", len(objs))
 }
 
 // read from start, until magic footer is found
@@ -74,15 +67,16 @@ func split_stream(r *bufio.Reader) ([][]byte, error) {
 	object_streams := [][]byte{}
 
 	// first 4 bytes should be magic header
-	if h, _ := r.ReadBytes(4); !bytes.Equal(h, stream_magic_header) {
+	if h, _ := r.Peek(4); !bytes.Equal(h, stream_magic_header) {
 		return nil,
 			errors.New("Error reading magic header, got this instead: " + string(h))
 	}
+	r.Discard(4)
 
 	for { // finding objects
 		is_object_footer := false
 		has_err := false
-		var buf bytes.Buffer
+		buf := bytes.Buffer{}
 		buf.Write(stream_magic_header)
 
 		_, err := r.Peek(1)
@@ -103,15 +97,19 @@ func split_stream(r *bufio.Reader) ([][]byte, error) {
 			if byte_peek[0] == 0x70 { // set is_object_footer
 				b, err := r.Peek(7)
 				if err != nil {
-					log.Println("Error peeking 7bytes:", err)
-					// has_err = true
-					break
+					// log.Println("Error peeking 7bytes:", err, len(b))
+					if len(b) < 3 {
+						log.Println("Error peeking 3bytes:", err, len(b))
+						has_err = true
+						break
+					}
+					// else it's just EOF
 				}
 				// read 7 bytes
 				// if found object footer
 				// and if next 4 bytes are 0x73 0x72 0x00 0x21, then it is really object footer
-				if bytes.Equal(b[1:4], object_magic_footer[1:]) {
-					if len(b) < 7 || bytes.Equal(b[4:], object_magic_header) {
+				if bytes.Equal(b[1:3], object_magic_footer[1:]) {
+					if len(b) < 7 || bytes.Equal(b[4:], object_magic_header[1:]) {
 						r.Discard(3)
 						is_object_footer = true
 					}
@@ -119,51 +117,66 @@ func split_stream(r *bufio.Reader) ([][]byte, error) {
 			}
 
 			if is_object_footer {
-				// obj_stream:= r.Sc()
-				// buf.Write
 				buf.Write(object_magic_footer)
 				break
 			}
 
 			// not object footer, write 1 byte
-			r.Discard(1)
 			buf.WriteByte(byte_peek[0])
+			r.Discard(1)
 
 			if has_err {
 				break
 			}
 		}
+		object_streams = append(object_streams, buf.Bytes())
 	}
 	return object_streams, nil
 }
 
-func read_stream(conn net.Conn) string {
-
-	r := bufio.NewReader(conn)
+func read_stream(conn net.Conn) []string {
 
 	// split the stream into object_streams
 	// read until encountering 70 78 79
 	// then split the stream into object_streams
-	var java_object_streams [][]byte
 
 	// while not EOF, write splitted streams to java_object_streams
+	var java_object_streams [][]byte
 
-	java_object_streams, _ = split_stream(r)
+	r := bufio.NewReader(conn)
+
+	java_object_streams, err := split_stream(r)
+	if err != nil {
+		log.Println("Error splitting stream:", err)
+	}
+
+	// TODO; testing
+	// for _, stream := range java_object_streams {
+	// 	log.Println("Received serialized content:\n", stream)
+	// }
+	// TODO end testing
 
 	var deserialized_objects []interface{}
 
-	for _, buf := range java_object_streams {
-		obj_arr, err := jserial.ParseSerializedObjectMinimal(buf)
-		// workaround: ALWAYS being parsed as list of one object
-		if err != nil {
-			if err == io.EOF && obj_arr == nil {
-				continue
-			}
-			if strings.Contains(err.Error(), "parsing Reset") {
-				// ignore error
+	for i, stream := range java_object_streams {
+		obj_arr := []interface{}{}
+		retry := 2
+		for retry > 0 {
+			obj_arr, err := jserial.ParseSerializedObjectMinimal(stream)
+			// workaround: ALWAYS being parsed as list of one object
+			if err != nil {
+				if err == io.EOF && obj_arr == nil {
+					continue
+				}
+				if strings.Contains(err.Error(), "parsing Reset") {
+					// ignore error
+				} else {
+					log.Println("Error parsing object:", i, obj_arr, err)
+					log.Println("object:", java_object_streams[i])
+					continue
+				}
 			} else {
-				log.Println("Error parsing object:", obj_arr, err)
-				continue
+				break
 			}
 		}
 		obj := obj_arr[0]
@@ -175,7 +188,7 @@ func read_stream(conn net.Conn) string {
 		json_str_array = append(json_str_array, to_json(obj))
 	}
 
-	return strings.Join(json_str_array, ",")
+	return json_str_array
 }
 
 func to_json(t interface{}) string {

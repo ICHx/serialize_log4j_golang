@@ -10,6 +10,6 @@ public class sender {
 
    public static void main(String[] args)throws IOException {
       log.debug("Hello");
-      log.debug("Hello2");
+      log.debug("Hello2");      log.debug("Hello3");
    }
 }
