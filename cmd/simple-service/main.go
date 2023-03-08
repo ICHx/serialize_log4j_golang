@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net"
@@ -65,46 +66,75 @@ func Uint16(b []byte) uint16 {
 }
 
 // read from start, until magic footer is found
-func read_until_footer(r *bufio.Reader) ([]byte, error) {
-	magic_header := []byte{0xac, 0xed, 0x00, 0x05}
-	var buf bytes.Buffer
+func split_stream(r *bufio.Reader) ([][]byte, error) {
+	stream_magic_header := []byte{0xac, 0xed, 0x00, 0x05}
+	object_magic_footer := []byte{0x70, 0x78, 0x79}
+	object_magic_header := []byte{0x73, 0x72, 0x00, 0x21}
 
-	is_object_footer := false
-	for {
-		b, err := r.Peek(1)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			log.Println("Error peeking:", err)
+	object_streams := [][]byte{}
+
+	// first 4 bytes should be magic header
+	if h, _ := r.ReadBytes(4); !bytes.Equal(h, stream_magic_header) {
+		return nil,
+			errors.New("Error reading magic header, got this instead: " + string(h))
+	}
+
+	for { // finding objects
+		is_object_footer := false
+		has_err := false
+		var buf bytes.Buffer
+		buf.Write(stream_magic_header)
+
+		_, err := r.Peek(1)
+		if err == io.EOF {
 			break
 		}
-		if b[0] == 0x70 {
+
+		for { // object: read bytes until magic footer is found
+			byte_peek, err := r.Peek(1)
 			if err != nil {
+				if err == io.EOF {
+					break
+				}
 				log.Println("Error peeking:", err)
+				has_err = true
 				break
 			}
-		} else {
-			continue
-		}
+			if byte_peek[0] == 0x70 { // set is_object_footer
+				b, err := r.Peek(7)
+				if err != nil {
+					log.Println("Error peeking 7bytes:", err)
+					// has_err = true
+					break
+				}
+				// read 7 bytes
+				// if found object footer
+				// and if next 4 bytes are 0x73 0x72 0x00 0x21, then it is really object footer
+				if bytes.Equal(b[1:4], object_magic_footer[1:]) {
+					if len(b) < 7 || bytes.Equal(b[4:], object_magic_header) {
+						r.Discard(3)
+						is_object_footer = true
+					}
+				}
+			}
 
-		b, err = r.Peek(3)
-		if err != nil {
-			log.Println("Error peeking 3bytes:", err)
-		}
-		// read 3 bytes
-		if b[1] == 0x78 && b[2] == 0x79 {
-			r.Discard(3)
-			is_object_footer = true
-		}
+			if is_object_footer {
+				// obj_stream:= r.Sc()
+				// buf.Write
+				buf.Write(object_magic_footer)
+				break
+			}
 
-		if is_object_footer {
-			buf.Write(magic_header)
-			// obj_stream:= r.Sc()
-			// buf.Write
+			// not object footer, write 1 byte
+			r.Discard(1)
+			buf.WriteByte(byte_peek[0])
+
+			if has_err {
+				break
+			}
 		}
 	}
-	return buf.Bytes(), nil
+	return object_streams, nil
 }
 
 func read_stream(conn net.Conn) string {
@@ -117,11 +147,8 @@ func read_stream(conn net.Conn) string {
 	var java_object_streams [][]byte
 
 	// while not EOF, write splitted streams to java_object_streams
-	for {
-		obj_bytes, _ := read_until_footer(r)
 
-		java_object_streams = append(java_object_streams, obj_bytes)
-	}
+	java_object_streams, _ = split_stream(r)
 
 	var deserialized_objects []interface{}
 
