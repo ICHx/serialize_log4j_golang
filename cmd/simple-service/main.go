@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -73,7 +74,7 @@ func split_stream(sr *bufio.Reader) ([][]byte, error) {
 	}
 	sr.Discard(4)
 
-	for { // finding objects
+	for { // finding objects in whole stream
 		_, err := sr.Peek(1)
 		if err == io.EOF {
 			break
@@ -130,9 +131,9 @@ func split_stream(sr *bufio.Reader) ([][]byte, error) {
 			if has_err {
 				break
 			}
-		}
+		} // end of current object
 		object_streams = append(object_streams, buf.Bytes())
-	}
+	} // end of stream
 	return object_streams, nil
 }
 
@@ -171,7 +172,9 @@ func read_stream(conn net.Conn) []string {
 				// ignore error
 			} else {
 				log.Println("Error parsing object:", i, obj_arr, err)
-				log.Println("object:", string(stream))
+				log.Println("ascii:", string(stream))
+				log.Println("hex:", hex.EncodeToString(stream))
+				log.Println("=====================================")
 				continue
 			}
 		}
