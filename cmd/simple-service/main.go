@@ -3,7 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"encoding/hex"
+	_ "encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -56,8 +56,8 @@ func handleRequest(conn net.Conn) {
 	defer conn.Close()
 	// Make a reader to get incoming data.
 
-	objs := read_stream(conn)
-	log.Println("Total Deserialized messages:\n", len(objs))
+	objs_rx := read_stream(conn)
+	log.Println("Total parsed messages:", objs_rx)
 }
 
 // read from start, until magic footer is found
@@ -182,7 +182,7 @@ func read_stream(conn net.Conn) []string {
 			} else {
 				log.Println("Error parsing object:", i, obj_arr, err)
 				log.Println("ascii:", string(stream))
-				log.Println("hex:", hex.EncodeToString(stream))
+				// log.Println("hex:", hex.EncodeToString(stream))
 				log.Println("=====================================")
 				continue
 			}
