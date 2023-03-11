@@ -6,6 +6,7 @@ import (
 	_ "encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -23,7 +24,7 @@ type config struct {
 }
 
 const (
-	CONCURRENT_DESERIALIZE = 1000
+	CONCURRENT_DESERIALIZE = 100
 )
 
 func Listen(address string) net.Listener {
@@ -45,28 +46,48 @@ func main() {
 	}
 	// Listen for incoming connections.
 	l := Listen(cfg.LISTEN_HOST + ":" + cfg.LISTEN_PORT)
+
+	// create channel
+	ch := make(chan string, CONCURRENT_DESERIALIZE)
+	go handleResponse(ch)
+
 	for {
 		conn, err := l.Accept()
 		if err != nil {
 			log.Panicln("Error accepting: ", err.Error())
 			continue
 		}
-		go handleRequest(conn)
+		go handleRequest(conn, ch)
 	}
 }
 
-func handleRequest(conn net.Conn) {
+func handleResponse(data_ch chan string) {
+	min := func(a, b int) int {
+		if a < b {
+			return a
+		}
+		return b
+	}
+
+	cnt := 0
+	for data_obj := range data_ch {
+		cnt++
+		var show_len int = min((10), len(data_obj))
+		log.Print(fmt.Sprintf("Sending %d:", cnt), data_obj[:show_len], "\t")
+	}
+
+}
+
+func handleRequest(conn net.Conn, data_ch chan string) {
 
 	defer conn.Close()
 	// Make a reader to get incoming data.
 	r := bufio.NewReader(conn)
 	output_store := process_stream(r)
-	cnt := 0
 
-	for range output_store {
-		cnt++
+	for _, str := range output_store {
+		data_ch <- str
 	}
-	log.Println("Total objects for sending:", cnt)
 }
 
 func split_stream(sr *bufio.Reader) ([][]byte, error) {
@@ -186,7 +207,7 @@ func process_stream(cr *bufio.Reader) []string {
 	return json_output_arr
 }
 
-func to_json(t interface{}) (string, error) {
+func to_json(t map[string]interface{}) (string, error) {
 	json_obj, err := json.Marshal(t)
 	if err != nil {
 		log.Println("Error marshalling object:", err)
@@ -211,7 +232,7 @@ func conv_serialized_java_object_to_json(java_object_streams []byte) (string, er
 		}
 	}
 	// workaround: ALWAYS being parsed as list of one object
-	obj := obj_arr[0]
+	var obj = obj_arr[0].(map[string]interface{})
 
 	json_str, err := to_json(obj)
 	if err != nil {
