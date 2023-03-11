@@ -22,6 +22,10 @@ type config struct {
 	// BUFFER int    `env:"BUFFER_LOG4J_INPUT" envDefault:"1024"`
 }
 
+const (
+	CONCURRENT_DESERIALIZE = 1000
+)
+
 func Listen(address string) net.Listener {
 	log.Default().Println("Listening on tcp", address)
 	listen, err := net.Listen("tcp", address)
@@ -55,12 +59,16 @@ func handleRequest(conn net.Conn) {
 
 	defer conn.Close()
 	// Make a reader to get incoming data.
+	r := bufio.NewReader(conn)
+	output_store := process_stream(r)
+	cnt := 0
 
-	objs_rx := read_stream(conn)
-	log.Println("Total parsed messages:", objs_rx)
+	for range output_store {
+		cnt++
+	}
+	log.Println("Total objects for sending:", cnt)
 }
 
-// read from start, until magic footer is found
 func split_stream(sr *bufio.Reader) ([][]byte, error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -151,59 +159,64 @@ func split_stream(sr *bufio.Reader) ([][]byte, error) {
 	return object_streams, nil
 }
 
-func read_stream(conn net.Conn) []string {
+func process_stream(cr *bufio.Reader) []string {
 
 	// split the stream into object_streams
 	// read until encountering 70 78 79
 	// then split the stream into object_streams
 
 	// while not EOF, write splitted streams to java_object_streams
-	var java_object_streams [][]byte
 
-	conn_reader := bufio.NewReader(conn)
-
-	java_object_streams, err := split_stream(conn_reader)
+	split_streams, err := split_stream(cr)
 	if err != nil {
 		log.Println("Error splitting stream:", err)
 	}
-	log.Println("Splitted #", len(java_object_streams))
+	log.Println("Total Splitted #", len(split_streams))
 
-	var deserialized_objects []interface{}
-
-	for i, stream := range java_object_streams {
-		obj_arr, err := jserial.ParseSerializedObjectMinimal(stream)
-		// workaround: ALWAYS being parsed as list of one object
+	json_output_arr := make([]string, 0, len(split_streams))
+	for _, stream := range split_streams {
+		json_str, err := conv_serialized_java_object_to_json(stream)
 		if err != nil {
-			if err == io.EOF && obj_arr == nil {
-				continue
-			}
-			if strings.Contains(err.Error(), "parsing Reset") {
-				// ignore error
-			} else {
-				log.Println("Error parsing object:", i, obj_arr, err)
-				log.Println("ascii:", string(stream))
-				// log.Println("hex:", hex.EncodeToString(stream))
-				log.Println("=====================================")
-				continue
-			}
+			log.Println("Error converting a java object to json:", err)
+			continue
 		}
-		obj := obj_arr[0]
-		deserialized_objects = append(deserialized_objects, obj)
+		json_output_arr = append(json_output_arr, json_str)
 	}
 
-	var json_str_array []string
-	for _, obj := range deserialized_objects {
-		json_str_array = append(json_str_array, to_json(obj))
-	}
-
-	return json_str_array
+	return json_output_arr
 }
 
-func to_json(t interface{}) string {
+func to_json(t interface{}) (string, error) {
 	json_obj, err := json.Marshal(t)
 	if err != nil {
 		log.Println("Error marshalling object:", err)
-		return ""
+		return "", err
 	}
-	return string(json_obj)
+	return string(json_obj), nil
+}
+
+func conv_serialized_java_object_to_json(java_object_streams []byte) (string, error) {
+	obj_arr, err := jserial.ParseSerializedObjectMinimal(java_object_streams)
+	if err != nil {
+		if err == io.EOF && obj_arr == nil {
+			return "nil", err
+		}
+		if strings.Contains(err.Error(), "parsing Reset") {
+			// ignore error
+		} else {
+			log.Println("Error parsing object:", obj_arr, err)
+			log.Println("ascii:", string(java_object_streams))
+			log.Println("=====================================")
+			return "nil", err
+		}
+	}
+	// workaround: ALWAYS being parsed as list of one object
+	obj := obj_arr[0]
+
+	json_str, err := to_json(obj)
+	if err != nil {
+		return "nil", err
+	}
+
+	return json_str, nil
 }
