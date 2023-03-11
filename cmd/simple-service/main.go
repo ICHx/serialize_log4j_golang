@@ -95,7 +95,7 @@ func split_stream(sr *bufio.Reader) ([][]byte, error) {
 
 		// is_object_footer := false
 		has_err := false
-		obj_write_buf := bytes.Buffer{}
+		obj_write_buf := bytes.NewBuffer(make([]byte, 0, 1024))
 		obj_write_buf.Write(stream_magic_header)
 
 		for { // object: read bytes until magic footer is found
