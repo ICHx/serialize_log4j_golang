@@ -5,13 +5,12 @@ import (
 	"bytes"
 	_ "encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
-	"os"
 	"strings"
+	"time"
 
 	"github.com/caarlos0/env/v7"
 	"github.com/jkeys089/jserial"
@@ -35,19 +34,25 @@ func Listen(address string) net.Listener {
 	listen, err := net.Listen("tcp", address)
 	if err != nil {
 		log.Fatal("Error listening:", err.Error())
-		os.Exit(1)
 	}
 	return listen
 }
 
 func Dial(address string) net.Conn {
 	log.Default().Println("Dialing to tcp", address)
-	conn, err := net.Dial("tcp", address)
-	if err != nil {
-		log.Fatal("Error dialing:", err.Error())
-		os.Exit(1)
+
+	for i := 0; i < 3; i++ {
+		conn, err := net.Dial("tcp", address)
+		if err != nil {
+			log.Println("Error dialing:", err.Error())
+			time.Sleep(5 * time.Second)
+		} else {
+			return conn
+		}
 	}
-	return conn
+	log.Panicln("Error dialing, stopped retrying")
+
+	return nil
 }
 
 var cfg config
@@ -60,11 +65,9 @@ func main() {
 	// Listen for incoming connections.
 	l := Listen(cfg.LISTEN_HOST + ":" + cfg.LISTEN_PORT)
 
-	d := Dial(cfg.JSON_LOG_HOST + ":" + cfg.JSON_LOG_PORT)
-
 	// create channel
 	ch := make(chan string, CONCURRENT_DESERIALIZE)
-	go handleFwd(d, ch)
+	go handleFwd(ch)
 
 	for {
 		conn, err := l.Accept()
@@ -76,45 +79,47 @@ func main() {
 	}
 }
 
-func handleFwd(conn net.Conn, data_ch chan string) {
-	defer conn.Close()
-	min := func(a, b int) int {
-		if a < b {
-			return a
-		}
-		return b
+func min(a, b int) int {
+	if a < b {
+		return a
 	}
+	return b
+}
 
+func handleFwd(data_ch chan string) {
+	out_conn := Dial(cfg.JSON_LOG_HOST + ":" + cfg.JSON_LOG_PORT)
+	log.Println("Handling Fwd", out_conn.RemoteAddr())
+	defer log.Println("Finished Fwd", out_conn.RemoteAddr())
+	defer out_conn.Close()
 	cnt := 0
 	for data_obj := range data_ch {
-		var show_len int = min((10), len(data_obj))
+		var show_len int = min((15), len(data_obj))
 		object_excerpt := data_obj[:show_len]
 		log.Print(fmt.Sprintf("Sending %d:", cnt), object_excerpt, "\t")
 
 		for i := 0; i < 3; i++ {
-			_, err := conn.Write([]byte(data_obj))
+			_, err := out_conn.Write([]byte(data_obj))
 			if err != nil {
 				log.Println("Error forwarding:", cnt, err.Error())
 			} else {
-				conn.Write([]byte("\n"))
+				out_conn.Write([]byte("\n"))
 				cnt++
 				break
 			}
 		}
 	}
-
 }
 
-func handleRequest(conn net.Conn, data_ch chan string) {
-	log.Println("Handling Request", conn.RemoteAddr())
-	defer log.Println("Finished Request", conn.RemoteAddr())
-	defer conn.Close()
+func handleRequest(in_conn net.Conn, data_ch chan string) {
+	log.Println("Handling Request", in_conn.RemoteAddr())
+	defer log.Println("Finished Request", in_conn.RemoteAddr())
+	defer in_conn.Close()
 	// Make a reader to get incoming data.
-	r := bufio.NewReader(conn)
+	r := bufio.NewReader(in_conn)
 	process_stream(r, data_ch)
 }
 
-func split_stream(sr *bufio.Reader) ([][]byte, error) {
+func split_stream(sr *bufio.Reader, out_split_obj_ch chan []byte) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Println("Recovered in split_stream", r)
@@ -130,13 +135,10 @@ func split_stream(sr *bufio.Reader) ([][]byte, error) {
 	// inaccurate interpretation, but should work for now
 	// actual specification mentioned in https://xz.aliyun.com/t/3847
 
-	object_streams := [][]byte{}
-
 	// first 2 bytes should be magic value 0xaced, second 2 bytes should be protocol version
 	// hardcode to 0x0005
 	if h, _ := sr.Peek(4); !bytes.Equal(h, stream_magic_header) {
-		return nil,
-			errors.New("Error reading magic header, got this instead: " + string(h))
+		log.Println("Error reading magic header, got this instead: " + string(h))
 	}
 	sr.Discard(4)
 
@@ -199,12 +201,12 @@ func split_stream(sr *bufio.Reader) ([][]byte, error) {
 			obj_write_buf.WriteByte(byte_peek)
 
 		} // end of current object
-		object_streams = append(object_streams, obj_write_buf.Bytes())
+		out_split_obj_ch <- obj_write_buf.Bytes()
 	} // end of stream
-	return object_streams, nil
+	return
 }
 
-func process_stream(cr *bufio.Reader, out_ch chan string) {
+func process_stream(cr *bufio.Reader, out_json_ch chan string) {
 
 	// split the stream into object_streams
 	// read until encountering 70 78 79
@@ -212,13 +214,11 @@ func process_stream(cr *bufio.Reader, out_ch chan string) {
 
 	// while not EOF, write splitted streams to java_object_streams
 
-	split_streams, err := split_stream(cr)
-	if err != nil {
-		log.Println("Error splitting stream:", err)
-	}
-	log.Println("Total Splitted #", len(split_streams))
+	split_streams_ch := make(chan []byte, CONCURRENT_DESERIALIZE)
 
-	for _, stream := range split_streams {
+	go split_stream(cr, split_streams_ch)
+
+	for stream := range split_streams_ch {
 		obj_map, err := java_objstream_to_go_map(stream)
 		if err != nil {
 			log.Println("Error converting a java object to go object:", err)
@@ -229,9 +229,8 @@ func process_stream(cr *bufio.Reader, out_ch chan string) {
 			log.Println("Error converting a go object to json:", err)
 			continue
 		}
-		out_ch <- json_str
+		out_json_ch <- json_str
 	}
-
 	return
 }
 
