@@ -21,10 +21,13 @@ type config struct {
 	LISTEN_HOST string `env:"HOST_LOG4J_INPUT" envDefault:"localhost"`
 	LISTEN_PORT string `env:"PORT_LOG4J_INPUT" envDefault:"2518"`
 	// BUFFER int    `env:"BUFFER_LOG4J_INPUT" envDefault:"1024"`
+
+	JSON_LOG_HOST string `env:"JSON_LOG_HOST" envDefault:"localhost"`
+	JSON_LOG_PORT string `env:"JSON_LOG_PORT" envDefault:"5540"`
 }
 
 const (
-	CONCURRENT_DESERIALIZE = 100
+	CONCURRENT_DESERIALIZE = 1000
 )
 
 func Listen(address string) net.Listener {
@@ -37,6 +40,16 @@ func Listen(address string) net.Listener {
 	return listen
 }
 
+func Dial(address string) net.Conn {
+	log.Default().Println("Dialing to tcp", address)
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		log.Fatal("Error dialing:", err.Error())
+		os.Exit(1)
+	}
+	return conn
+}
+
 var cfg config
 
 func main() {
@@ -47,9 +60,11 @@ func main() {
 	// Listen for incoming connections.
 	l := Listen(cfg.LISTEN_HOST + ":" + cfg.LISTEN_PORT)
 
+	d := Dial(cfg.JSON_LOG_HOST + ":" + cfg.JSON_LOG_PORT)
+
 	// create channel
 	ch := make(chan string, CONCURRENT_DESERIALIZE)
-	go handleResponse(ch)
+	go handleFwd(d, ch)
 
 	for {
 		conn, err := l.Accept()
@@ -61,7 +76,8 @@ func main() {
 	}
 }
 
-func handleResponse(data_ch chan string) {
+func handleFwd(conn net.Conn, data_ch chan string) {
+	defer conn.Close()
 	min := func(a, b int) int {
 		if a < b {
 			return a
@@ -71,9 +87,20 @@ func handleResponse(data_ch chan string) {
 
 	cnt := 0
 	for data_obj := range data_ch {
-		cnt++
 		var show_len int = min((10), len(data_obj))
-		log.Print(fmt.Sprintf("Sending %d:", cnt), data_obj[:show_len], "\t")
+		object_excerpt := data_obj[:show_len]
+		log.Print(fmt.Sprintf("Sending %d:", cnt), object_excerpt, "\t")
+
+		for i := 0; i < 3; i++ {
+			_, err := conn.Write([]byte(data_obj))
+			if err != nil {
+				log.Println("Error forwarding:", cnt, err.Error())
+			} else {
+				conn.Write([]byte("\n"))
+				cnt++
+				break
+			}
+		}
 	}
 
 }
