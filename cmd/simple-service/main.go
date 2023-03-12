@@ -79,7 +79,8 @@ func handleResponse(data_ch chan string) {
 }
 
 func handleRequest(conn net.Conn, data_ch chan string) {
-
+	log.Println("Handling Request", conn.RemoteAddr())
+	defer log.Println("Finished Request", conn.RemoteAddr())
 	defer conn.Close()
 	// Make a reader to get incoming data.
 	r := bufio.NewReader(conn)
@@ -196,9 +197,14 @@ func process_stream(cr *bufio.Reader) []string {
 
 	json_output_arr := make([]string, 0, len(split_streams))
 	for _, stream := range split_streams {
-		json_str, err := conv_serialized_java_object_to_json(stream)
+		obj_map, err := java_objstream_to_go_map(stream)
 		if err != nil {
-			log.Println("Error converting a java object to json:", err)
+			log.Println("Error converting a java object to go object:", err)
+			continue
+		}
+		json_str, err := map_to_json(obj_map)
+		if err != nil {
+			log.Println("Error converting a go object to json:", err)
 			continue
 		}
 		json_output_arr = append(json_output_arr, json_str)
@@ -207,7 +213,7 @@ func process_stream(cr *bufio.Reader) []string {
 	return json_output_arr
 }
 
-func to_json(t map[string]interface{}) (string, error) {
+func map_to_json(t map[string]interface{}) (string, error) {
 	json_obj, err := json.Marshal(t)
 	if err != nil {
 		log.Println("Error marshalling object:", err)
@@ -216,28 +222,22 @@ func to_json(t map[string]interface{}) (string, error) {
 	return string(json_obj), nil
 }
 
-func conv_serialized_java_object_to_json(java_object_streams []byte) (string, error) {
-	obj_arr, err := jserial.ParseSerializedObjectMinimal(java_object_streams)
+func java_objstream_to_go_map(java_obj_bytes []byte) (map[string]interface{}, error) {
+	obj_arr, err := jserial.ParseSerializedObjectMinimal(java_obj_bytes)
 	if err != nil {
 		if err == io.EOF && obj_arr == nil {
-			return "nil", err
+			return nil, err
 		}
 		if strings.Contains(err.Error(), "parsing Reset") {
 			// ignore error
 		} else {
 			log.Println("Error parsing object:", obj_arr, err)
-			log.Println("ascii:", string(java_object_streams))
+			log.Println("ascii:", string(java_obj_bytes))
 			log.Println("=====================================")
-			return "nil", err
+			return nil, err
 		}
 	}
 	// workaround: ALWAYS being parsed as list of one object
 	var obj = obj_arr[0].(map[string]interface{})
-
-	json_str, err := to_json(obj)
-	if err != nil {
-		return "nil", err
-	}
-
-	return json_str, nil
+	return obj, nil
 }
