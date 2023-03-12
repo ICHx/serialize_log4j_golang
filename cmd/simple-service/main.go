@@ -111,11 +111,7 @@ func handleRequest(conn net.Conn, data_ch chan string) {
 	defer conn.Close()
 	// Make a reader to get incoming data.
 	r := bufio.NewReader(conn)
-	output_store := process_stream(r)
-
-	for _, str := range output_store {
-		data_ch <- str
-	}
+	process_stream(r, data_ch)
 }
 
 func split_stream(sr *bufio.Reader) ([][]byte, error) {
@@ -208,7 +204,7 @@ func split_stream(sr *bufio.Reader) ([][]byte, error) {
 	return object_streams, nil
 }
 
-func process_stream(cr *bufio.Reader) []string {
+func process_stream(cr *bufio.Reader, out_ch chan string) {
 
 	// split the stream into object_streams
 	// read until encountering 70 78 79
@@ -222,7 +218,6 @@ func process_stream(cr *bufio.Reader) []string {
 	}
 	log.Println("Total Splitted #", len(split_streams))
 
-	json_output_arr := make([]string, 0, len(split_streams))
 	for _, stream := range split_streams {
 		obj_map, err := java_objstream_to_go_map(stream)
 		if err != nil {
@@ -234,10 +229,10 @@ func process_stream(cr *bufio.Reader) []string {
 			log.Println("Error converting a go object to json:", err)
 			continue
 		}
-		json_output_arr = append(json_output_arr, json_str)
+		out_ch <- json_str
 	}
 
-	return json_output_arr
+	return
 }
 
 func map_to_json(t map[string]interface{}) (string, error) {
