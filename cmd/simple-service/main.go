@@ -72,7 +72,7 @@ func main() {
 	for {
 		conn, err := l.Accept()
 		if err != nil {
-			log.Panicln("Error accepting: ", err.Error())
+			log.Println("Error accepting request: ", err.Error())
 			continue
 		}
 		go handleRequest(conn, ch)
@@ -89,8 +89,7 @@ func min(a, b int) int {
 func handleFwd(data_ch chan string) {
 	out_conn := Dial(cfg.JSON_LOG_HOST + ":" + cfg.JSON_LOG_PORT)
 	log.Println("Handling Fwd", out_conn.RemoteAddr())
-	defer log.Println("Finished Fwd", out_conn.RemoteAddr())
-	defer out_conn.Close()
+	defer out_conn.Close() // likely wouldn't close for entire program
 	cnt := 0
 	for data_obj := range data_ch {
 		var show_len int = min((15), len(data_obj))
@@ -203,11 +202,10 @@ func split_stream(sr *bufio.Reader, out_split_obj_ch chan []byte) {
 		} // end of current object
 		out_split_obj_ch <- obj_write_buf.Bytes()
 	} // end of stream
-	return
+	close(out_split_obj_ch)
 }
 
 func process_stream(cr *bufio.Reader, out_json_ch chan string) {
-
 	// split the stream into object_streams
 	// read until encountering 70 78 79
 	// then split the stream into object_streams
@@ -215,7 +213,6 @@ func process_stream(cr *bufio.Reader, out_json_ch chan string) {
 	// while not EOF, write splitted streams to java_object_streams
 
 	split_streams_ch := make(chan []byte, CONCURRENT_DESERIALIZE)
-
 	go split_stream(cr, split_streams_ch)
 
 	for stream := range split_streams_ch {
@@ -231,7 +228,6 @@ func process_stream(cr *bufio.Reader, out_json_ch chan string) {
 		}
 		out_json_ch <- json_str
 	}
-	return
 }
 
 func map_to_json(t map[string]interface{}) (string, error) {
