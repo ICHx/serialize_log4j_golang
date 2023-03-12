@@ -221,6 +221,9 @@ func process_stream(cr *bufio.Reader, out_json_ch chan string) {
 			log.Println("Error converting a java object to go object:", err)
 			continue
 		}
+
+		obj_map = transform_log_event(obj_map)
+
 		json_str, err := map_to_json(obj_map)
 		if err != nil {
 			log.Println("Error converting a go object to json:", err)
@@ -228,6 +231,45 @@ func process_stream(cr *bufio.Reader, out_json_ch chan string) {
 		}
 		out_json_ch <- json_str
 	}
+}
+
+func transform_log_event(obj_map map[string]interface{}) map[string]interface{} {
+	var stack_trace_info, filename, methodname string
+	if obj_map["throwableInfo"] != nil {
+		stack_trace_info = strings.Join(obj_map["throwableStrRep"].([]string), "\n"	)
+	}
+
+	if obj_map["locationInformation"] != nil {
+		filename = obj_map["locationInformation"].(map[string]interface{})["fileName"].(string)
+		methodname = obj_map["locationInformation"].(map[string]interface{})["methodName"].(string)}
+
+	event := map[string]interface{}{
+		"message": obj_map["renderedMessage"],
+		"timestamp": obj_map["timeStamp"],
+		"path": obj_map["loggerName"],
+		// "priority": obj_map["level"].(map[string]interface{})["levelStr"], // TODO: fix this
+		"logger_name": obj_map["categoryName"],
+		"thread": obj_map["threadName"],
+		"class": obj_map["categoryName"],
+		"file": filename,
+		"method": methodname,
+		"ndc": obj_map["ndc"],
+		"stack_trace": stack_trace_info,
+	}
+
+	// event.set("message" => log4j_obj.getRenderedMessage)
+    // event.set("timestamp", log4j_obj.getTimeStamp)
+    // event.set("path", log4j_obj.getLoggerName)
+    // event.set("priority", log4j_obj.getLevel.toString)
+    // event.set("logger_name", log4j_obj.getLoggerName)
+    // event.set("thread", log4j_obj.getThreadName)
+    // event.set("class", log4j_obj.getLocationInformation.getClassName)
+    // event.set("file", log4j_obj.getLocationInformation.getFileName + ":" + log4j_obj.getLocationInformation.getLineNumber)
+    // event.set("method", log4j_obj.getLocationInformation.getMethodName)
+    // event.set("NDC", log4j_obj.getNDC) if log4j_obj.getNDC
+    // event.set("stack_trace", log4j_obj.getThrowableStrRep.to_a.join("\n")) if log4j_obj.getThrowableInformation
+
+	return event
 }
 
 func map_to_json(t map[string]interface{}) (string, error) {
@@ -240,7 +282,8 @@ func map_to_json(t map[string]interface{}) (string, error) {
 }
 
 func java_objstream_to_go_map(java_obj_bytes []byte) (map[string]interface{}, error) {
-	obj_arr, err := jserial.ParseSerializedObjectMinimal(java_obj_bytes)
+	obj_arr, err := jserial.ParseSerializedObject(java_obj_bytes)
+	// obj_arr, err := jserial.ParseSerializedObjectMinimal(java_obj_bytes)
 	if err != nil {
 		if err == io.EOF && obj_arr == nil {
 			return nil, err
