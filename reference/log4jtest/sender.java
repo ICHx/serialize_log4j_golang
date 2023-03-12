@@ -8,6 +8,8 @@ public class sender {
 
    public static void main(String[] args) {
       IntStream.range(0,5).forEach(i -> log.info("Hello " + i));
+      log.error("Error");
+      log.warn("Warn");
       log.debug("Bye");
    }
 }
