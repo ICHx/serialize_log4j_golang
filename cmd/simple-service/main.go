@@ -295,6 +295,15 @@ func transform_log_event(obj_map map[string]interface{}) map[string]interface{} 
 		"stack_trace": stack_trace_info,
 	}
 
+	// set MDC properties
+	if obj_map["mdcCopy"] != nil {
+		if mdc, ok := obj_map["mdcCopy"].(map[string]interface{})["value"]; ok {
+			for k, v := range mdc.(map[string]interface{}) {
+				event[k] = v
+			}
+		}
+	}
+
 	log.Println("msg", event["message"], "level", level_str)
 
 	// event.set("message" => log4j_obj.getRenderedMessage)
