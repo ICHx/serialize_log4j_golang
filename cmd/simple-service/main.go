@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	_ "encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -244,19 +245,47 @@ func transform_log_event(obj_map map[string]interface{}) map[string]interface{} 
 		methodname = obj_map["locationInformation"].(map[string]interface{})["methodName"].(string)
 	}
 
-	// TODO: fix this
-	level_byte := obj_map["@"].([]interface{})[0].([]byte)
+	// The hex values of the log4j levels are:
+	// ALL: 0x0000
+	// TRACE: 0x1388
+	// DEBUG: 0x2710
+	// INFO: 0x4E20
+	// WARN: 0x7530
+	// ERROR: 0x9C40
+	// FATAL: 0xC350
+	// OFF: 0x7FFFFFFF
 
-	// 	for i,v:=range level_byte{
-	// 	log.Println("level_bytes",i, v)
-	// }
-	log.Println("level_bytes", (level_byte))
+	level_byte_arr := obj_map["@"].([]interface{})[0].([]byte)
+	level_int := binary.BigEndian.Uint32(level_byte_arr)
+
+	level_str := func(level_int uint32) string {
+		switch level_int {
+		case 0x0000:
+			return "ALL"
+		case 0x1388:
+			return "TRACE"
+		case 0x2710:
+			return "DEBUG"
+		case 0x4E20:
+			return "INFO"
+		case 0x7530:
+			return "WARN"
+		case 0x9C40:
+			return "ERROR"
+		case 0xC350:
+			return "FATAL"
+		case 0x7FFFFFFF:
+			return "OFF"
+		default:
+			return "UNKNOWN"
+		}
+	}(level_int)
 
 	event := map[string]interface{}{
-		"message":   obj_map["renderedMessage"],
-		"timestamp": obj_map["timeStamp"],
-		"path":      obj_map["loggerName"],
-		// "priority": level_byte, //TODO hacking
+		"message":     obj_map["renderedMessage"],
+		"timestamp":   obj_map["timeStamp"],
+		"path":        obj_map["loggerName"],
+		"priority":    level_str,
 		"logger_name": obj_map["categoryName"],
 		"thread":      obj_map["threadName"],
 		"class":       obj_map["categoryName"],
@@ -265,6 +294,8 @@ func transform_log_event(obj_map map[string]interface{}) map[string]interface{} 
 		"ndc":         obj_map["ndc"],
 		"stack_trace": stack_trace_info,
 	}
+
+	log.Println("msg", event["message"], "level", level_str)
 
 	// event.set("message" => log4j_obj.getRenderedMessage)
 	// event.set("timestamp", log4j_obj.getTimeStamp)
