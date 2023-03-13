@@ -213,14 +213,14 @@ func process_stream(cr *bufio.Reader, out_json_ch chan string) {
 
 	// while not EOF, write splitted streams to java_object_streams
 
-	split_streams_ch := make(chan []byte, CONCURRENT_DESERIALIZE)
-	go split_stream(cr, split_streams_ch)
+	// split_streams_ch := make(chan []byte, CONCURRENT_DESERIALIZE)
+	// go split_stream(cr, split_streams_ch)
 
-	for stream := range split_streams_ch {
-		obj_map, err := java_objstream_to_go_map(stream)
+		b,_:=io.ReadAll(cr)
+		obj_map, err := java_objstream_to_go_map(b)
 		if err != nil {
 			log.Println("Error converting a java object to go object:", err)
-			continue
+
 		}
 
 		obj_map = transform_log_event(obj_map)
@@ -228,10 +228,10 @@ func process_stream(cr *bufio.Reader, out_json_ch chan string) {
 		json_str, err := map_to_json(obj_map)
 		if err != nil {
 			log.Println("Error converting a go object to json:", err)
-			continue
+
 		}
 		out_json_ch <- json_str
-	}
+
 }
 
 func transform_log_event(obj_map map[string]interface{}) map[string]interface{} {
