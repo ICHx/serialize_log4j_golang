@@ -123,6 +123,7 @@ func split_stream(sr *bufio.Reader, out_split_obj_ch chan []byte) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Println("Recovered in split_stream", r)
+			close(out_split_obj_ch)
 		}
 	}()
 
@@ -175,6 +176,7 @@ func split_stream(sr *bufio.Reader, out_split_obj_ch chan []byte) {
 				}
 				// expect 0x78 0x79
 				if bytes.Equal(byte_peek_2, object_footer[1:]) {
+					obj_write_buf.WriteByte(byte_peek)
 					obj_write_buf.Write(byte_peek_2)
 					sr.Discard(2)
 
